@@ -1,0 +1,323 @@
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
+
+local Players                = game:GetService("Players")
+local ProximityPromptService = game:GetService("ProximityPromptService")
+local RunService             = game:GetService("RunService")
+
+local Player = Players.LocalPlayer
+
+----------------------------------------------------------------
+-- Anti-KnockBack
+----------------------------------------------------------------
+local AntiKnockbackEnabled = true
+
+task.spawn(function()
+    while task.wait(0.1) do
+        if AntiKnockbackEnabled then
+            local char = Player.Character
+            local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if humanoid and root
+                and humanoid:GetState() == Enum.HumanoidStateType.Physics then
+                root.AssemblyLinearVelocity = Vector3.zero
+            end
+        end
+    end
+end)
+
+local function SetAntiKnockback(state)
+    AntiKnockbackEnabled = state and true or false
+end
+
+----------------------------------------------------------------
+-- Anti-Hit
+----------------------------------------------------------------
+local AntiHitEnabled   = false
+local IsAntiHitRunning = false
+local PROTECT_DURATION = 0.35
+
+local RoutePoints = {
+    CFrame.new(500.62, 241.28, -366.64),
+    CFrame.new(504.45, 155.80, -366.35),
+    CFrame.new(508.30,  70.28, -366.03),
+    CFrame.new(513.86,  70.28, -366.25),
+    CFrame.new(519.43,  70.28, -366.47),
+    CFrame.new(524.32,  70.28, -366.59),
+    CFrame.new(529.22,  70.28, -366.71),
+    CFrame.new(538.01,  70.28, -365.55),
+    CFrame.new(546.80,  70.28, -364.40),
+}
+local SAFE_CF = RoutePoints[#RoutePoints]
+
+local function SetAntiHit(state)
+    AntiHitEnabled = state and true or false
+end
+
+local function getRoot()
+    local char = Player.Character
+    return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function zeroVelocity(root)
+    pcall(function()
+        root.AssemblyLinearVelocity  = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
+    end)
+end
+
+local function fireRoute()
+    local root = getRoot()
+    if not root then IsAntiHitRunning = false; return end
+
+    for _, cf in ipairs(RoutePoints) do
+        root.CFrame = cf
+    end
+    zeroVelocity(root)
+
+    local deadline = tick() + PROTECT_DURATION
+    local conn
+    conn = RunService.Heartbeat:Connect(function()
+        if not AntiHitEnabled or tick() > deadline then
+            conn:Disconnect()
+            IsAntiHitRunning = false
+            return
+        end
+        local r = getRoot()
+        if not r then conn:Disconnect(); IsAntiHitRunning = false; return end
+        r.CFrame = SAFE_CF
+        zeroVelocity(r)
+    end)
+end
+
+ProximityPromptService.PromptTriggered:Connect(function(_, plr)
+    if plr ~= Player      then return end
+    if not AntiHitEnabled then return end
+    if IsAntiHitRunning   then return end
+    IsAntiHitRunning = true
+    task.spawn(fireRoute)
+end)
+
+----------------------------------------------------------------
+-- ESP
+----------------------------------------------------------------
+--// ESP SETTINGS
+
+local Player = Players.LocalPlayer
+local localPlayer = Player
+
+local tbl = {
+    Esp = false,
+    EspFill = true,
+    EspOutline = true,
+    EspName = true,
+    EspDistance = true,
+}
+--// ESP OBJECTS
+
+local ESPHighlights = {}
+local ESPLabels = {}
+local ESPConnections = {}
+
+--// CREATE ESP
+
+local function CreateESP(player)
+    if player == localPlayer or not player.Character then
+        return
+    end
+
+    local character = player.Character
+
+    -- Highlight
+    local highlight = ESPHighlights[player]
+
+    if not highlight then
+        highlight = Instance.new("Highlight")
+        highlight.Name = "PlayerESP"
+        ESPHighlights[player] = highlight
+    end
+
+    highlight.Adornee = character
+    highlight.Parent = character
+    highlight.FillColor = Color3.fromRGB(255, 60, 60)
+    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+    highlight.FillTransparency = tbl.EspFill and 0.5 or 1
+    highlight.OutlineTransparency = tbl.EspOutline and 0 or 1
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.Enabled = tbl.Esp
+
+    -- Player Label
+    local billboard = ESPLabels[player]
+
+    if not billboard then
+        billboard = Instance.new("BillboardGui")
+        billboard.Name = "PlayerESPLabel"
+        billboard.Size = UDim2.fromOffset(200, 30)
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
+        billboard.AlwaysOnTop = true
+        billboard.MaxDistance = math.huge
+
+        local text = Instance.new("TextLabel")
+        text.Name = "Text"
+        text.Size = UDim2.fromScale(1, 1)
+        text.BackgroundTransparency = 1
+        text.Font = Enum.Font.GothamBold
+        text.TextSize = 14
+        text.TextColor3 = Color3.new(1, 1, 1)
+        text.TextStrokeTransparency = 0.3
+        text.Parent = billboard
+
+        ESPLabels[player] = billboard
+    end
+
+    local head = character:FindFirstChild("Head")
+    billboard.Adornee = head or character:FindFirstChild("HumanoidRootPart")
+    billboard.Parent = character
+    billboard.Enabled = tbl.Esp
+end
+
+--// REMOVE ESP
+
+local function RemoveESP(player)
+    if ESPConnections[player] then
+        ESPConnections[player]:Disconnect()
+        ESPConnections[player] = nil
+    end
+
+    if ESPHighlights[player] then
+        ESPHighlights[player]:Destroy()
+        ESPHighlights[player] = nil
+    end
+
+    if ESPLabels[player] then
+        ESPLabels[player]:Destroy()
+        ESPLabels[player] = nil
+    end
+end
+
+--// PLAYER CONNECTIONS
+
+local function SetupPlayer(player)
+    if player == localPlayer or ESPConnections[player] then
+        return
+    end
+
+    ESPConnections[player] = player.CharacterAdded:Connect(function()
+        task.wait(0.2)
+        CreateESP(player)
+    end)
+
+    CreateESP(player)
+end
+
+for _, player in ipairs(Players:GetPlayers()) do
+    SetupPlayer(player)
+end
+
+Players.PlayerAdded:Connect(SetupPlayer)
+Players.PlayerRemoving:Connect(RemoveESP)
+
+--// UPDATE ESP
+
+task.spawn(function()
+    while true do
+        local myCharacter = localPlayer.Character
+        local myRoot = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
+
+        for player, billboard in pairs(ESPLabels) do
+            local character = player.Character
+            local root = character and character:FindFirstChild("HumanoidRootPart")
+            local text = billboard:FindFirstChild("Text")
+
+            if myRoot and root and text then
+                local parts = {}
+
+                if tbl.EspName then
+                    table.insert(parts, player.DisplayName)
+                end
+
+                if tbl.EspDistance then
+                    local distance = (root.Position - myRoot.Position).Magnitude
+                    table.insert(parts, string.format("[%d]", math.floor(distance + 0.5)))
+                end
+
+                text.Text = table.concat(parts, " ")
+            end
+        end
+
+        task.wait(0.1)
+    end
+end)
+
+----------------------------------------------------------------
+-- UI
+----------------------------------------------------------------
+local window = Rayfield:CreateWindow({
+    name = "Rexity Hub / Steal An Egg",
+    subtitle = "Best Steal A Egg Script Hub",
+    sidebarLayout = true,
+})
+
+-- HomeWindow
+
+local tab = window:CreateTab({
+    name = "Home",
+    icon = 93364949241311
+})
+
+-- AntiSection
+
+tab:CreateSection({
+    name = "Anti",
+    icon = 93364949241311
+})
+
+-- ANTIKNOCKBACK
+
+tab:CreateToggle({
+    name = "Anti-KnockBack",
+    flag = "AntiKnockback",
+    value = true,
+    callback = function(value)
+        SetAntiKnockback(value)
+    end,
+})
+
+-- ANTI-HIT
+
+tab:CreateToggle({
+    name = "Anti-Hit",
+    flag = "AntiHit",
+    value = false,
+    callback = function(value)
+        SetAntiHit(value)
+    end,
+})
+
+tab:CreateSection({
+    name = "Extra Sensory Perception",
+    icon = 93364949241311
+})
+
+-- ESPTOGGLE
+
+local espToggle = tab:CreateToggle({
+    name = "Player ESP",
+    flag = "Esp",
+    value = false,
+
+    callback = function(value)
+        tbl.Esp = value
+
+        for player, highlight in pairs(ESPHighlights) do
+            highlight.Enabled = value
+        end
+
+        for player, billboard in pairs(ESPLabels) do
+            billboard.Enabled = value
+        end
+    end,
+})
+
+espToggle:Set(false)
+
+-
